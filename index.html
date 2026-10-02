@@ -1,0 +1,229 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>남해 여행지도</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<style>
+  :root { --ink:#1f2a37; --sub:#6b7280; --line:#e5e7eb; --bg:#fafaf8; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:"Pretendard","Malgun Gothic",sans-serif; color:var(--ink); background:var(--bg);
+         display:flex; height:100vh; }
+  #side { width:350px; overflow-y:auto; padding:20px 18px; border-right:1px solid var(--line); background:#fff; }
+  #map { flex:1; }
+  h1 { font-size:19px; margin:0 0 4px; }
+  .note { font-size:12px; color:var(--sub); margin:0 0 14px; line-height:1.5; }
+  .tabs { display:flex; gap:6px; margin:0 0 10px; flex-wrap:wrap; }
+  .tabs button { border:1px solid var(--line); background:#fff; color:var(--ink); border-radius:16px; padding:5px 12px; font-size:13px; cursor:pointer; font-family:inherit; }
+  .tabs button.on { background:var(--ink); color:#fff; border-color:var(--ink); }
+  #planTabs button { font-weight:700; }
+  .stay { font-size:12.5px; line-height:1.55; background:#f4f5f7; border-radius:8px; padding:9px 11px; margin:6px 0 16px; }
+  .stay b { display:block; margin-bottom:2px; }
+  .day { margin-bottom:18px; }
+  .day.dim { opacity:.4; }
+  .day h2 { font-size:15px; margin:0 0 8px; padding-left:10px; border-left:4px solid; cursor:pointer; }
+  ol { margin:0; padding-left:22px; }
+  li { font-size:13.5px; line-height:1.55; margin-bottom:6px; cursor:pointer; }
+  li span { display:block; font-size:12px; color:var(--sub); }
+  li a { font-size:11.5px; color:var(--sub); }
+  .pin { display:inline-flex; align-items:center; justify-content:center; min-width:26px; height:26px; padding:0 7px; border-radius:13px;
+         color:#fff; font-size:12.5px; font-weight:700; border:2px solid #fff; box-shadow:0 1px 4px rgba(0,0,0,.4); white-space:nowrap; transform:translate(-50%,-50%); }
+  .pin.home { border-radius:4px; }
+  @media (max-width:760px) { body { flex-direction:column; } #side { width:100%; height:48vh; border-right:0; border-bottom:1px solid var(--line); } }
+</style>
+</head>
+<body>
+<div id="side">
+  <h1>남해 여행지도</h1>
+  <p class="note">차량 기준. 삼천포대교로 들어가서 남해대교로 나오는 한 바퀴 동선입니다. 선은 순서를 이은 것이고 실제 도로는 아닙니다. 가까운 곳은 숫자가 합쳐 보이고 확대하면 나뉩니다. 네모 표시는 숙소입니다.</p>
+  <div class="tabs" id="planTabs"></div>
+  <div id="stay" class="stay"></div>
+  <div class="tabs" id="dayTabs"></div>
+  <div id="days"></div>
+</div>
+<div id="map"></div>
+<script>
+// 장소 좌표 (OSM 기준, 섬이정원·상주는 근사치)
+const P = {
+  삼천포대교:   [34.9285,128.0505],
+  죽방렴:       [34.8270,128.0080],
+  독일마을:     [34.7992,128.0401],
+  방조어부림:   [34.7905,128.0440],
+  숙소_독일마을:[34.8010,128.0385],
+  보물섬전망대: [34.7698,128.0532],
+  미조항:       [34.7120,128.0460],
+  상주은모래비치:[34.7195,127.9900],
+  숙소_상주:    [34.7225,127.9880],
+  보리암:       [34.7522,127.9830],
+  다랭이마을:   [34.7280,127.8950],
+  섬이정원:     [34.7570,127.8770],
+  이순신바다공원:[34.9110,127.8585],
+  남해대교:     [34.9443,127.8720]
+};
+const COLORS = ["#2f4b7c", "#5f8a6e", "#a9746e"];
+// [이름, 좌표키, 시간, 메모, 숙소여부]
+const PLANS = {
+  "1박 2일": {
+    stay: "<b>숙소: 독일마을 일대 (삼동면 물건리)</b>펜션이 많고 저녁에 걸어서 맥주 마시러 갈 수 있어요. 동쪽 바다를 보고 있어서 아침 해돋이도 좋아요. 둘째 날은 여기서 서쪽으로 쭉 빠지면서 남해대교로 나갑니다.",
+    days: [
+      { name:"1일차  동쪽 해안", stops:[
+        ["삼천포대교로 입도", "삼천포대교", "오전", "사천IC로 나와서 창선을 거쳐 들어가요"],
+        ["지족해협 죽방렴", "죽방렴", "12:30  점심 멸치쌈밥", "멸치쌈밥·멸치회무침 식당이 모여 있음"],
+        ["남해 보물섬전망대", "보물섬전망대", "14:30  스카이워크·카페", "물미해안도로를 따라"],
+        ["물건리 방조어부림", "방조어부림", "16:00  숲길 산책", ""],
+        ["남해 독일마을", "독일마을", "17:00  전망·저녁·맥주", "파독전시관 쪽 전망이 가장 좋음"],
+        ["숙소 (독일마을 일대)", "숙소_독일마을", "체크인", "", true]
+      ]},
+      { name:"2일차  남쪽·서쪽, 나가면서 보기", stops:[
+        ["금산 보리암", "보리암", "08:30  일찍 출발 (숙소에서 30분)", "복곡탐방지원센터 1주차장 주차 후 셔틀. 금산산장 컵라면"],
+        ["상주은모래비치", "상주은모래비치", "10:30  잠깐 산책 (빠듯하면 생략)", "보리암 내려오는 길이에요"],
+        ["가천 다랭이마을", "다랭이마을", "12:00  점심 다랭이맛집", "블루리본 받은 곳, 음식보다 바다 뷰. 경사 심해서 운동화 필수"],
+        ["섬이정원", "섬이정원", "14:00  정원 산책", "하늘연못이 사진 명소"],
+        ["이순신바다공원", "이순신바다공원", "15:30  관음포·이락사", "나가는 길목. 영상관·해설 무료, 주차 넉넉"],
+        ["남해대교로 출도", "남해대교", "16:30 무렵  귀가", "공원에서 10분"]
+      ]}
+    ]
+  },
+  "2박 3일": {
+    stay: "<b>숙소: 첫날 독일마을 일대, 둘째 날 상주은모래비치 일대 (상주면)</b>상주에서 자면 셋째 날 아침 보리암까지 15분이라 사람 몰리기 전에 올라갈 수 있어요. 한 곳에서 2박 하고 싶으면 독일마을 일대로 잡고, 셋째 날 보리암까지 30분 운전하면 돼요.",
+    days: [
+      { name:"1일차  동쪽 해안", stops:[
+        ["삼천포대교로 입도", "삼천포대교", "오전", "사천IC로 나와서 창선을 거쳐 들어가요"],
+        ["지족해협 죽방렴", "죽방렴", "12:30  점심 멸치쌈밥", ""],
+        ["물건리 방조어부림", "방조어부림", "15:00  숲길 산책", ""],
+        ["남해 독일마을", "독일마을", "16:00  전망·저녁·맥주", ""],
+        ["숙소 (독일마을 일대)", "숙소_독일마을", "체크인", "", true]
+      ]},
+      { name:"2일차  물미해안도로·남쪽 바다", stops:[
+        ["남해 보물섬전망대", "보물섬전망대", "10:00  스카이워크·카페", "물미해안도로를 천천히"],
+        ["미조항", "미조항", "12:30  점심", "항구 식당"],
+        ["상주은모래비치", "상주은모래비치", "14:30  해변·송림에서 쉬기", "돗자리 챙기기"],
+        ["숙소 (상주은모래비치 일대)", "숙소_상주", "체크인", "", true]
+      ]},
+      { name:"3일차  보리암·서쪽, 나가면서 보기", stops:[
+        ["금산 보리암", "보리암", "08:30  숙소에서 15분", "복곡 1주차장 주차 후 셔틀"],
+        ["가천 다랭이마을", "다랭이마을", "11:30  점심 다랭이맛집", "블루리본 받은 곳, 음식보다 바다 뷰. 운동화 필수"],
+        ["섬이정원", "섬이정원", "13:30  정원 산책", ""],
+        ["이순신바다공원", "이순신바다공원", "15:00  관음포·이락사", "나가는 길목. 영상관·해설 무료"],
+        ["남해대교로 출도", "남해대교", "16:00 무렵  귀가", "연휴 마지막 날이면 더 일찍"]
+      ]}
+    ]
+  }
+};
+
+const map = L.map("map", { zoomControl:true });
+const street = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",
+  { attribution:"Tiles &copy; Esri", maxNativeZoom:13, maxZoom:18 });
+const sat = L.layerGroup([
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}", { attribution:"Tiles &copy; Esri", maxNativeZoom:17, maxZoom:18 }),
+  L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}", { maxNativeZoom:17, maxZoom:18 })
+]);
+L.control.layers({ "일반 지도":street, "위성 사진":sat }, null, { collapsed:false }).addTo(map);
+// 일반 지도는 13단계까지만 있어서, 더 확대하면 위성으로 자동 전환 (직접 고르면 그대로 둠)
+let manualBase = false, autoSwitching = false;
+map.on("baselayerchange", () => { if (!autoSwitching) manualBase = true; });
+function autoBase() {
+  if (manualBase) return;
+  const want = map.getZoom() >= 14 ? sat : street, other = want === sat ? street : sat;
+  if (!map.hasLayer(want)) { autoSwitching = true; map.removeLayer(other); want.addTo(map); autoSwitching = false; }
+}
+
+const pinLayer = L.layerGroup().addTo(map), lineLayer = L.layerGroup().addTo(map);
+let plan = "1박 2일", view = 0, STOPS = [];
+
+function visible() { return STOPS.filter(s => view === -1 || s.day === view); }
+function label(s) { return view === -1 ? `${s.day+1}-${s.idx+1}` : `${s.idx+1}`; }
+
+function drawPins() {
+  pinLayer.clearLayers();
+  const groups = [];
+  visible().forEach(s => {
+    const p = map.latLngToLayerPoint(s.ll);
+    const g = groups.find(g => g.p.distanceTo(p) < 34);
+    if (g) g.list.push(s); else groups.push({ p, list:[s] });
+  });
+  groups.forEach(g => {
+    const lat = g.list.reduce((a, s) => a + s.ll[0], 0) / g.list.length;
+    const lng = g.list.reduce((a, s) => a + s.ll[1], 0) / g.list.length;
+    const days = [...new Set(g.list.map(s => s.day))];
+    const color = days.length === 1 ? COLORS[days[0]] : "#1f2a37";
+    const home = g.list.length === 1 && g.list[0].home;
+    const icon = L.divIcon({ className:"", iconSize:[0,0],
+      html:`<div class="pin${home ? " home" : ""}" style="background:${color}">${g.list.map(label).join(" · ")}</div>` });
+    const pop = g.list.map(s => `<b>${s.day+1}일차 ${s.idx+1}. ${s.nm}</b><br>${s.when}${s.tip ? "<br>" + s.tip : ""}`)
+      .join("<hr style='border:0;border-top:1px solid #eee;margin:6px 0'>");
+    const m = L.marker([lat, lng], { icon }).bindPopup(pop).addTo(pinLayer);
+    g.list.forEach(s => s.marker = m);
+  });
+}
+
+function drawLines() {
+  lineLayer.clearLayers();
+  PLANS[plan].days.forEach((d, di) => {
+    if (view !== -1 && view !== di) return;
+    L.polyline(d.stops.map(s => P[s[1]]), { color:COLORS[di], weight:3, opacity:.85, dashArray:"6 6" }).addTo(lineLayer);
+  });
+}
+
+function setDay(v) {
+  view = v;
+  document.querySelectorAll("#dayTabs button").forEach(b => b.classList.toggle("on", +b.dataset.v === v));
+  document.querySelectorAll(".day").forEach((el, i) => el.classList.toggle("dim", v !== -1 && v !== i));
+  drawLines();
+  map.fitBounds(visible().map(s => s.ll), { padding:[40,40] });
+  drawPins();
+}
+
+function setPlan(name) {
+  plan = name;
+  const pl = PLANS[name];
+  document.title = "남해 " + name;
+  document.querySelectorAll("#planTabs button").forEach(b => b.classList.toggle("on", b.textContent === name));
+  document.getElementById("stay").innerHTML = pl.stay;
+  STOPS = [];
+  pl.days.forEach((d, di) => d.stops.forEach((s, si) =>
+    STOPS.push({ day:di, idx:si, nm:s[0], ll:P[s[1]], when:s[2], tip:s[3], home:!!s[4] })));
+
+  const tabs = document.getElementById("dayTabs"); tabs.innerHTML = "";
+  [...pl.days.map((_, i) => [`${i+1}일차`, i]), ["전체", -1]].forEach(([t, v]) => {
+    const b = document.createElement("button"); b.textContent = t; b.dataset.v = v; b.onclick = () => setDay(v); tabs.appendChild(b);
+  });
+
+  const daysEl = document.getElementById("days"); daysEl.innerHTML = "";
+  pl.days.forEach((d, di) => {
+    const box = document.createElement("div"); box.className = "day";
+    const h = document.createElement("h2"); h.textContent = d.name; h.style.borderColor = COLORS[di]; h.onclick = () => setDay(di);
+    box.appendChild(h);
+    const ol = document.createElement("ol");
+    STOPS.filter(s => s.day === di).forEach(s => {
+      const li = document.createElement("li");
+      const q = encodeURIComponent(s.home ? s.nm.replace(/.*\((.*)\)/, "남해 $1 펜션") : "남해 " + s.nm.replace("로 입도", "").replace("로 출도", ""));
+      li.innerHTML = `${s.nm}<span>${s.when}${s.tip ? " · " + s.tip : ""}</span><a href="https://map.kakao.com/?q=${q}" target="_blank">카카오맵에서 보기</a>`;
+      li.onclick = e => {
+        if (e.target.tagName === "A") return;
+        if (view !== -1 && view !== di) setDay(di);
+        map.setView(s.ll, 15);
+        setTimeout(() => s.marker && s.marker.openPopup(), 350);
+      };
+      ol.appendChild(li);
+    });
+    box.appendChild(ol); daysEl.appendChild(box);
+  });
+  setDay(0);
+}
+
+const planTabs = document.getElementById("planTabs");
+Object.keys(PLANS).forEach(n => {
+  const b = document.createElement("button"); b.textContent = n; b.onclick = () => setPlan(n); planTabs.appendChild(b);
+});
+
+map.on("zoomend", () => { autoBase(); drawPins(); });
+street.addTo(map);
+map.setView([34.8, 127.97], 11);
+setPlan(plan);
+setTimeout(() => { map.invalidateSize(); setDay(view); }, 200);
+</script>
+</body>
+</html>
